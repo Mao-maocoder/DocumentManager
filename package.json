@@ -1,0 +1,67 @@
+{
+    "name": "file-assistant",
+    "version": "0.1.0",
+    "private": true,
+    "description": "A Windows desktop app for organizing frequently used file shortcuts by scene.",
+    "main": "dist-electron/electron/main.js",
+    "scripts": {
+        "dev": "npm run build && electron .",
+        "preview": "npm run build && electron .",
+        "build": "tsc -p tsconfig.electron.json && vite build",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+        "pack": "npm run build && node scripts/run-electron-builder.cjs --dir",
+        "dist": "npm run build && node scripts/run-electron-builder.cjs",
+        "release": "npm run build && node scripts/run-electron-builder.cjs --publish always"
+    },
+    "dependencies": {
+        "electron-updater": "^6.8.9",
+        "lucide-react": "^0.468.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.14.11",
+        "@types/react": "^18.3.3",
+        "@types/react-dom": "^18.3.0",
+        "@vitejs/plugin-react": "^4.3.1",
+        "electron": "^31.2.1",
+        "electron-builder": "^26.15.3",
+        "typescript": "^5.5.3",
+        "vite": "^5.3.4"
+    },
+    "build": {
+        "appId": "local.file.entry.manager",
+        "productName": "文件助手",
+        "asar": true,
+        "directories": {
+            "output": "release"
+        },
+        "publish": {
+            "provider": "github",
+            "owner": "Mao-maocoder",
+            "repo": "DocumentManager",
+            "releaseType": "release"
+        },
+        "files": [
+            "dist/**",
+            "dist-electron/**",
+            "assets/**",
+            "package.json"
+        ],
+        "win": {
+            "icon": "assets/icons/app-icon.ico",
+            "target": [
+                "nsis"
+            ],
+            "artifactName": "${productName}-Setup-${version}.${ext}"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "文件助手"
+        }
+    }
+}
