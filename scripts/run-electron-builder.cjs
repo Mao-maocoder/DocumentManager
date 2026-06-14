@@ -4,11 +4,14 @@ const path = require("node:path");
 process.env.ELECTRON_MIRROR ||= "https://npmmirror.com/mirrors/electron/";
 process.env.ELECTRON_GET_USE_PROXY ||= "true";
 
-const executable = process.platform === "win32" ? "electron-builder.cmd" : "electron-builder";
-const builderBin = path.join(__dirname, "..", "node_modules", ".bin", executable);
-const result = spawnSync(builderBin, process.argv.slice(2), {
+const builderCli = path.join(__dirname, "..", "node_modules", "electron-builder", "cli.js");
+const result = spawnSync(process.execPath, [builderCli, ...process.argv.slice(2)], {
   env: process.env,
   stdio: "inherit"
 });
+
+if (result.error) {
+  console.error(result.error.message);
+}
 
 process.exit(result.status ?? 1);
