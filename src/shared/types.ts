@@ -39,6 +39,30 @@ export interface FilePreview {
   message?: string;
 }
 
+export interface ThemeSettings {
+  backgroundImageUrl: string | null;
+  backgroundStrength: number;
+  backgroundBlur: number;
+  panelOpacity: number;
+  panelBlur: number;
+}
+
+export interface ThemeResult extends OperationResult {
+  theme: ThemeSettings;
+}
+
+export interface UpdatePromptInfo {
+  version: string;
+  releaseName?: string;
+  releaseNotes: string;
+}
+
+export interface UpdateDownloadProgress {
+  percent: number;
+  transferred: number;
+  total: number;
+}
+
 export interface FileManagerApi {
   listData(): Promise<FileManagerData>;
   addFiles(sceneId: string): Promise<FileManagerData>;
@@ -50,7 +74,16 @@ export interface FileManagerApi {
   openFile(fileId: string): Promise<OperationResult>;
   showInFolder(fileId: string): Promise<OperationResult>;
   getPreview(fileId: string): Promise<FilePreview>;
-  onUpdateAvailable(callback: (version: string) => void): () => void;
+  getAppVersion(): Promise<string>;
+  checkForUpdates(): Promise<OperationResult>;
+  downloadUpdate(): Promise<OperationResult>;
+  getThemeSettings(): Promise<ThemeSettings>;
+  updateThemeSettings(settings: Partial<ThemeSettings>): Promise<ThemeSettings>;
+  chooseThemeBackground(): Promise<ThemeResult>;
+  clearThemeBackground(): Promise<ThemeSettings>;
+  onUpdateAvailable(callback: (info: UpdatePromptInfo) => void): () => void;
+  onUpdateNotAvailable(callback: (version: string) => void): () => void;
+  onUpdateDownloadProgress(callback: (progress: UpdateDownloadProgress) => void): () => void;
   onUpdateDownloaded(callback: () => void): () => void;
   onUpdateError(callback: (message: string) => void): () => void;
   installUpdate(): void;

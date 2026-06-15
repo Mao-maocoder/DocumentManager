@@ -4,7 +4,18 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
-import type { FileManagerData, FilePreview, FilePreviewKind, ManagedFile, ManagedScene, OperationResult } from "../src/shared/types";
+import type {
+  FileManagerData,
+  FilePreview,
+  FilePreviewKind,
+  ManagedFile,
+  ManagedScene,
+  OperationResult,
+  ThemeResult,
+  ThemeSettings,
+  UpdateDownloadProgress,
+  UpdatePromptInfo
+} from "../src/shared/types";
 import { UNCATEGORIZED_SCENE_ID } from "../src/shared/types";
 
 const DEFAULT_SCENES: ManagedScene[] = [
@@ -17,11 +28,114 @@ const DEFAULT_SCENES: ManagedScene[] = [
 
 let mainWindow: BrowserWindow | null = null;
 const APP_ICON_PATH = path.join(__dirname, "../../assets/icons/app-icon.png");
+let manualUpdateCheckPending = false;
+let updateDownloadStarted = false;
+const DEFAULT_THEME_SETTINGS: ThemeSettings = {
+  backgroundImageUrl: null,
+  backgroundStrength: 0.58,
+  backgroundBlur: 6,
+  panelOpacity: 0.74,
+  panelBlur: 12
+};
 
-function getDataFilePath(): string {
+function getAppDataDir(): string {
   const dataDir = path.join(app.getPath("userData"), "file-entry-manager");
   fs.mkdirSync(dataDir, { recursive: true });
+  return dataDir;
+}
+
+function getDataFilePath(): string {
+  const dataDir = getAppDataDir();
   return path.join(dataDir, "data.json");
+}
+
+function getThemeFilePath(): string {
+  return path.join(getAppDataDir(), "theme.json");
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
+function themeWithUrl(settings: Omit<ThemeSettings, "backgroundImageUrl"> & { backgroundImagePath?: string | null }): ThemeSettings {
+  const backgroundImagePath =
+    typeof settings.backgroundImagePath === "string" && fs.existsSync(settings.backgroundImagePath)
+      ? settings.backgroundImagePath
+      : null;
+
+  return {
+    backgroundImageUrl: backgroundImagePath ? pathToFileURL(backgroundImagePath).toString() : null,
+    backgroundStrength: settings.backgroundStrength,
+    backgroundBlur: settings.backgroundBlur,
+    panelOpacity: settings.panelOpacity,
+    panelBlur: settings.panelBlur
+  };
+}
+
+function loadThemeSettings(): ThemeSettings {
+  const themePath = getThemeFilePath();
+  if (!fs.existsSync(themePath)) {
+    return DEFAULT_THEME_SETTINGS;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(themePath, "utf8")) as Partial<ThemeSettings> & {
+      backgroundImagePath?: unknown;
+    };
+    return themeWithUrl({
+      backgroundImagePath: typeof parsed.backgroundImagePath === "string" ? parsed.backgroundImagePath : null,
+      backgroundStrength: clampNumber(parsed.backgroundStrength, 0, 1, DEFAULT_THEME_SETTINGS.backgroundStrength),
+      backgroundBlur: clampNumber(parsed.backgroundBlur, 0, 24, DEFAULT_THEME_SETTINGS.backgroundBlur),
+      panelOpacity: clampNumber(parsed.panelOpacity, 0, 0.96, DEFAULT_THEME_SETTINGS.panelOpacity),
+      panelBlur: clampNumber(parsed.panelBlur, 0, 24, DEFAULT_THEME_SETTINGS.panelBlur)
+    });
+  } catch {
+    return DEFAULT_THEME_SETTINGS;
+  }
+}
+
+function saveThemeSettings(settings: Partial<ThemeSettings> & { backgroundImagePath?: string | null }): ThemeSettings {
+  const existing = readRawThemeSettings();
+  const next = {
+    backgroundImagePath:
+      settings.backgroundImagePath === undefined ? existing.backgroundImagePath : settings.backgroundImagePath,
+    backgroundStrength: clampNumber(
+      settings.backgroundStrength,
+      0,
+      1,
+      existing.backgroundStrength
+    ),
+    backgroundBlur: clampNumber(settings.backgroundBlur, 0, 24, existing.backgroundBlur),
+    panelOpacity: clampNumber(settings.panelOpacity, 0, 0.96, existing.panelOpacity),
+    panelBlur: clampNumber(settings.panelBlur, 0, 24, existing.panelBlur)
+  };
+  fs.writeFileSync(getThemeFilePath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return themeWithUrl(next);
+}
+
+function readRawThemeSettings(): Omit<ThemeSettings, "backgroundImageUrl"> & { backgroundImagePath: string | null } {
+  const themePath = getThemeFilePath();
+  if (!fs.existsSync(themePath)) {
+    return { ...DEFAULT_THEME_SETTINGS, backgroundImagePath: null };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(themePath, "utf8")) as Partial<ThemeSettings> & {
+      backgroundImagePath?: unknown;
+    };
+    return {
+      backgroundImagePath: typeof parsed.backgroundImagePath === "string" ? parsed.backgroundImagePath : null,
+      backgroundStrength: clampNumber(parsed.backgroundStrength, 0, 1, DEFAULT_THEME_SETTINGS.backgroundStrength),
+      backgroundBlur: clampNumber(parsed.backgroundBlur, 0, 24, DEFAULT_THEME_SETTINGS.backgroundBlur),
+      panelOpacity: clampNumber(parsed.panelOpacity, 0, 0.96, DEFAULT_THEME_SETTINGS.panelOpacity),
+      panelBlur: clampNumber(parsed.panelBlur, 0, 24, DEFAULT_THEME_SETTINGS.panelBlur)
+    };
+  } catch {
+    return { ...DEFAULT_THEME_SETTINGS, backgroundImagePath: null };
+  }
 }
 
 function sanitizeText(value: unknown, fallback = ""): string {
@@ -231,26 +345,150 @@ function createWindow(): void {
   });
 }
 
-function checkForUpdates(): void {
+function checkForUpdates(manual = false): Promise<OperationResult> | void {
   if (!app.isPackaged) {
-    return;
+    return manual ? Promise.resolve({ ok: false, message: "开发模式无法检查更新，请安装正式版本后再试。" }) : undefined;
   }
 
-  autoUpdater.checkForUpdates().catch((error: unknown) => {
+  if (manual) {
+    manualUpdateCheckPending = true;
+  }
+
+  const checkPromise = autoUpdater.checkForUpdates();
+  checkPromise.catch((error: unknown) => {
+    manualUpdateCheckPending = false;
     const message = error instanceof Error ? error.message : "检查更新失败。";
     mainWindow?.webContents.send("update-error", message);
   });
+
+  return manual ? checkPromise.then(() => ({ ok: true, message: "正在检查更新。" })) : undefined;
 }
 
-autoUpdater.autoDownload = true;
+function releaseNotesToText(releaseNotes: unknown): string {
+  if (typeof releaseNotes === "string") {
+    return releaseNotes.trim();
+  }
+  if (Array.isArray(releaseNotes)) {
+    return releaseNotes
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return "";
+        }
+        const note = item as { version?: unknown; note?: unknown };
+        const version = typeof note.version === "string" ? `v${note.version}` : "";
+        const text = typeof note.note === "string" ? note.note.trim() : "";
+        return [version, text].filter(Boolean).join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  return "";
+}
+
+function normalizeUpdateInfo(info: { version?: string; releaseName?: unknown; releaseNotes?: unknown }): UpdatePromptInfo {
+  return {
+    version: info.version ?? "",
+    releaseName: typeof info.releaseName === "string" ? info.releaseName : undefined,
+    releaseNotes: releaseNotesToText(info.releaseNotes) || "这个版本包含稳定性改进和问题修复。"
+  };
+}
+
+autoUpdater.autoDownload = false;
 autoUpdater.on("update-available", (info) => {
-  mainWindow?.webContents.send("update-available", info.version);
+  manualUpdateCheckPending = false;
+  updateDownloadStarted = false;
+  mainWindow?.webContents.send("update-available", normalizeUpdateInfo(info));
+});
+autoUpdater.on("update-not-available", (info) => {
+  if (manualUpdateCheckPending) {
+    mainWindow?.webContents.send("update-not-available", info.version);
+  }
+  manualUpdateCheckPending = false;
 });
 autoUpdater.on("update-downloaded", () => {
+  updateDownloadStarted = false;
   mainWindow?.webContents.send("update-downloaded");
 });
 autoUpdater.on("error", (error) => {
+  manualUpdateCheckPending = false;
+  updateDownloadStarted = false;
   mainWindow?.webContents.send("update-error", error.message);
+});
+autoUpdater.on("download-progress", (progress) => {
+  const nextProgress: UpdateDownloadProgress = {
+    percent: Math.max(0, Math.min(100, progress.percent || 0)),
+    transferred: progress.transferred || 0,
+    total: progress.total || 0
+  };
+  mainWindow?.webContents.send("update-download-progress", nextProgress);
+});
+
+ipcMain.handle("file-manager:get-app-version", () => app.getVersion());
+ipcMain.handle("file-manager:check-for-updates", () => checkForUpdates(true));
+ipcMain.handle("file-manager:download-update", async (): Promise<OperationResult> => {
+  if (!app.isPackaged) {
+    return { ok: false, message: "开发模式无法下载更新，请安装正式版本后再试。" };
+  }
+  if (updateDownloadStarted) {
+    return { ok: true, message: "更新正在下载。" };
+  }
+
+  try {
+    updateDownloadStarted = true;
+    await autoUpdater.downloadUpdate();
+    return { ok: true, message: "更新下载已开始。" };
+  } catch (error) {
+    updateDownloadStarted = false;
+    const message = error instanceof Error ? error.message : "更新下载失败。";
+    mainWindow?.webContents.send("update-error", message);
+    return { ok: false, message };
+  }
+});
+ipcMain.handle("file-manager:get-theme-settings", () => loadThemeSettings());
+ipcMain.handle("file-manager:update-theme-settings", (_event, settings: unknown) => {
+  if (!settings || typeof settings !== "object") {
+    return loadThemeSettings();
+  }
+  return saveThemeSettings(settings as Partial<ThemeSettings>);
+});
+ipcMain.handle("file-manager:clear-theme-background", () => saveThemeSettings({ backgroundImagePath: null }));
+ipcMain.handle("file-manager:choose-theme-background", async (): Promise<ThemeResult> => {
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, {
+        title: "选择背景图片",
+        filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] }],
+        properties: ["openFile"]
+      })
+    : await dialog.showOpenDialog({
+        title: "选择背景图片",
+        filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] }],
+        properties: ["openFile"]
+      });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, message: "没有选择图片。", theme: loadThemeSettings() };
+  }
+
+  const sourcePath = result.filePaths[0];
+  const extension = path.extname(sourcePath).toLocaleLowerCase() || ".png";
+  const targetPath = path.join(getAppDataDir(), `theme-background${extension}`);
+
+  try {
+    fs.copyFileSync(sourcePath, targetPath);
+    return {
+      ok: true,
+      message: "背景已更新。",
+      theme: saveThemeSettings({
+        backgroundImagePath: targetPath,
+        backgroundStrength: 0.72,
+        backgroundBlur: 4,
+        panelOpacity: 0.52,
+        panelBlur: 8
+      })
+    };
+  } catch {
+    return { ok: false, message: "背景图片复制失败。", theme: loadThemeSettings() };
+  }
 });
 
 ipcMain.handle("file-manager:list-data", () => refreshMissingFlags(loadData()));

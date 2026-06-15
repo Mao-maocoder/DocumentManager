@@ -14,11 +14,12 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Settings,
   Tag,
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import audioIcon from "../assets/icons/file-types/audio-v4.png";
 import codeIcon from "../assets/icons/file-types/code-v4.png";
 import excelIcon from "../assets/icons/file-types/excel-v4.png";
@@ -31,15 +32,31 @@ import textIcon from "../assets/icons/file-types/text-simple.png";
 import videoIcon from "../assets/icons/file-types/video-v4.png";
 import wordIcon from "../assets/icons/file-types/word-v4.png";
 import zipIcon from "../assets/icons/file-types/zip-v4.png";
-import type { FileManagerData, FilePreview, ManagedFile, ManagedScene } from "./shared/types";
+import type {
+  FileManagerData,
+  FilePreview,
+  ManagedFile,
+  ManagedScene,
+  ThemeSettings,
+  UpdateDownloadProgress,
+  UpdatePromptInfo
+} from "./shared/types";
 import { UNCATEGORIZED_SCENE_ID } from "./shared/types";
 
 const NEW_SCENE_COLORS = ["#0a84ff", "#34c759", "#ff3b30", "#af52de", "#ff9500", "#5ac8fa"];
+const DEFAULT_THEME_SETTINGS: ThemeSettings = {
+  backgroundImageUrl: null,
+  backgroundStrength: 0.58,
+  backgroundBlur: 6,
+  panelOpacity: 0.74,
+  panelBlur: 12
+};
 
 type FileTypeFilter = "all" | "word" | "excel" | "ppt" | "pdf" | "image" | "video" | "audio" | "archive" | "html" | "code" | "text" | "folder" | "other";
 type StatusFilter = "all" | "ok" | "missing";
 type SortMode = "recent" | "added" | "name" | "type";
 type ListDensity = "comfortable" | "compact";
+type UpdateDialogMode = "prompt" | "downloading" | "ready";
 
 function formatDateTime(value: string | null): string {
   if (!value) {
@@ -298,9 +315,16 @@ export function App() {
   const [sceneColor, setSceneColor] = useState(NEW_SCENE_COLORS[0]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const [updateReady, setUpdateReady] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdatePromptInfo | null>(null);
+  const [updateDialogMode, setUpdateDialogMode] = useState<UpdateDialogMode>("prompt");
+  const [updateDialogVisible, setUpdateDialogVisible] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress>({ percent: 0, transferred: 0, total: 0 });
+  const [updateInBackground, setUpdateInBackground] = useState(false);
   const [updateError, setUpdateError] = useState("");
+  const [appVersion, setAppVersion] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [themeSettings, setThemeSettings] = useState<ThemeSettings>(DEFAULT_THEME_SETTINGS);
   const { message, show } = useToast();
 
   useEffect(() => {
@@ -312,25 +336,54 @@ export function App() {
       })
       .catch(() => show("读取本地数据失败"))
       .finally(() => setLoading(false));
+    window.fileManager
+      .getAppVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(""));
+    window.fileManager
+      .getThemeSettings()
+      .then(setThemeSettings)
+      .catch(() => setThemeSettings(DEFAULT_THEME_SETTINGS));
   }, []);
 
   useEffect(() => {
-    const removeUpdateAvailable = window.fileManager.onUpdateAvailable((version) => {
-      setUpdateVersion(version);
-      setUpdateReady(false);
+    const removeUpdateAvailable = window.fileManager.onUpdateAvailable((info) => {
+      setUpdateInfo(info);
+      setUpdateDialogMode("prompt");
+      setUpdateDialogVisible(true);
+      setUpdateInBackground(false);
+      setUpdateProgress({ percent: 0, transferred: 0, total: 0 });
       setUpdateError("");
+      setUpdateChecking(false);
+    });
+    const removeUpdateNotAvailable = window.fileManager.onUpdateNotAvailable((version) => {
+      setUpdateChecking(false);
+      show(`当前已是最新版本 v${version}`);
     });
     const removeUpdateDownloaded = window.fileManager.onUpdateDownloaded(() => {
-      setUpdateReady(true);
+      setUpdateDialogMode("ready");
+      setUpdateDialogVisible(true);
+      setUpdateInBackground(false);
       setUpdateError("");
+      setUpdateChecking(false);
+    });
+    const removeUpdateDownloadProgress = window.fileManager.onUpdateDownloadProgress((progress) => {
+      setUpdateProgress(progress);
+      setUpdateDialogMode("downloading");
+      setUpdateChecking(false);
     });
     const removeUpdateError = window.fileManager.onUpdateError((nextMessage) => {
       setUpdateError(nextMessage);
+      setUpdateDialogVisible(true);
+      setUpdateInBackground(false);
+      setUpdateChecking(false);
     });
 
     return () => {
       removeUpdateAvailable();
+      removeUpdateNotAvailable();
       removeUpdateDownloaded();
+      removeUpdateDownloadProgress();
       removeUpdateError();
     };
   }, []);
@@ -496,6 +549,81 @@ export function App() {
     setStatusFilter("all");
   }
 
+  async function checkLatestVersion() {
+    if (updateChecking) {
+      return;
+    }
+    setUpdateChecking(true);
+    setUpdateError("");
+    show("正在检查更新");
+    try {
+      const result = await window.fileManager.checkForUpdates();
+      if (!result.ok) {
+        setUpdateChecking(false);
+        show(result.message ?? "检查更新失败");
+      }
+    } catch {
+      setUpdateChecking(false);
+      show("检查更新失败");
+    }
+  }
+
+  async function startUpdateDownload() {
+    setUpdateDialogMode("downloading");
+    setUpdateDialogVisible(true);
+    setUpdateInBackground(false);
+    setUpdateError("");
+    const result = await window.fileManager.downloadUpdate();
+    if (!result.ok) {
+      setUpdateError(result.message ?? "更新下载失败");
+      setUpdateDialogVisible(true);
+      setUpdateInBackground(false);
+    }
+  }
+
+  function sendUpdateToBackground() {
+    setUpdateDialogVisible(false);
+    setUpdateInBackground(true);
+    show("更新正在后台下载");
+  }
+
+  async function updateTheme(partial: Partial<ThemeSettings>) {
+    const next = { ...themeSettings, ...partial };
+    setThemeSettings(next);
+    try {
+      const saved = await window.fileManager.updateThemeSettings(next);
+      setThemeSettings(saved);
+    } catch {
+      show("主题保存失败");
+    }
+  }
+
+  async function chooseThemeBackground() {
+    const result = await window.fileManager.chooseThemeBackground();
+    setThemeSettings(result.theme);
+    if (result.message) {
+      show(result.message);
+    }
+  }
+
+  async function clearThemeBackground() {
+    const next = await window.fileManager.clearThemeBackground();
+    setThemeSettings(next);
+    show("背景已移除");
+  }
+
+  const themeScrimOpacity = themeSettings.backgroundImageUrl
+    ? Math.max(0.18, 0.82 - themeSettings.backgroundStrength * 0.62)
+    : 0;
+  const appThemeStyle = {
+    "--theme-background-image": themeSettings.backgroundImageUrl ? `url("${themeSettings.backgroundImageUrl}")` : "none",
+    "--theme-background-strength": String(themeSettings.backgroundStrength),
+    "--theme-background-blur": `${themeSettings.backgroundBlur}px`,
+    "--theme-scrim-opacity": String(themeScrimOpacity),
+    "--panel-opacity": String(themeSettings.panelOpacity),
+    "--panel-blur": `${themeSettings.panelBlur}px`
+  } as CSSProperties;
+
   if (loading) {
     return (
       <main className="loading-screen">
@@ -506,22 +634,80 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      {(updateVersion || updateError) && (
-        <div className={updateReady ? "update-banner ready" : "update-banner"} role="status">
-          {updateError ? (
-            <span>更新检查失败：{updateError}</span>
-          ) : updateReady ? (
-            <>
-              <span>新版本 v{updateVersion} 已下载完成</span>
-              <button type="button" onClick={() => window.fileManager.installUpdate()}>
-                重启安装
-              </button>
-            </>
-          ) : (
-            <span>发现新版本 v{updateVersion}，正在后台下载</span>
-          )}
+    <main className="app-shell" style={appThemeStyle}>
+      {updateDialogVisible && (updateInfo || updateError) && (
+        <div className="update-dialog-overlay" role="presentation">
+          <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
+            <div className="update-dialog-header">
+              <div>
+                <p className="eyebrow">Software Update</p>
+                <h2 id="update-dialog-title">
+                  {updateError ? "更新检查失败" : updateDialogMode === "ready" ? "更新已准备好" : `发现新版本 v${updateInfo?.version ?? ""}`}
+                </h2>
+              </div>
+              {updateDialogMode !== "downloading" && (
+                <button className="icon-button" type="button" onClick={() => setUpdateDialogVisible(false)} title="关闭">
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {updateError ? (
+              <p className="update-error-message">{updateError}</p>
+            ) : updateDialogMode === "ready" ? (
+              <p className="update-ready-message">新版本 v{updateInfo?.version} 已下载完成，重启后会完成安装。</p>
+            ) : updateDialogMode === "downloading" ? (
+              <div className="update-progress-panel">
+                <div className="update-progress-head">
+                  <span>正在下载 v{updateInfo?.version}</span>
+                  <strong>{Math.round(updateProgress.percent)}%</strong>
+                </div>
+                <div className="update-progress-track">
+                  <span style={{ width: `${Math.max(2, Math.min(100, updateProgress.percent))}%` }} />
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="release-notes">
+                  <strong>{updateInfo?.releaseName ?? "变更内容"}</strong>
+                  <p>{updateInfo?.releaseNotes}</p>
+                </div>
+                <p className="update-dialog-hint">是否现在下载并安装这个更新？</p>
+              </>
+            )}
+
+            <div className="update-dialog-actions">
+              {updateError ? (
+                <button className="secondary-button" type="button" onClick={() => setUpdateDialogVisible(false)}>
+                  知道了
+                </button>
+              ) : updateDialogMode === "ready" ? (
+                <button className="primary-action" type="button" onClick={() => window.fileManager.installUpdate()}>
+                  重启安装
+                </button>
+              ) : updateDialogMode === "downloading" ? (
+                <button className="secondary-button" type="button" onClick={sendUpdateToBackground}>
+                  后台下载
+                </button>
+              ) : (
+                <>
+                  <button className="plain-action" type="button" onClick={() => setUpdateDialogVisible(false)}>
+                    稍后
+                  </button>
+                  <button className="primary-action" type="button" onClick={startUpdateDownload}>
+                    立即更新
+                  </button>
+                </>
+              )}
+            </div>
+          </section>
         </div>
+      )}
+
+      {updateInBackground && updateDialogMode === "downloading" && (
+        <button className="background-download-button" type="button" onClick={() => setUpdateDialogVisible(true)}>
+          后台下载 {Math.round(updateProgress.percent)}%
+        </button>
       )}
 
       <aside className="sidebar">
@@ -600,6 +786,93 @@ export function App() {
             </div>
           </div>
         )}
+
+        <div className="sidebar-settings">
+          <button
+            className={settingsOpen ? "settings-row active" : "settings-row"}
+            type="button"
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
+            <span className="scene-symbol settings">
+              <Settings size={17} />
+            </span>
+            <span>设置</span>
+          </button>
+          {settingsOpen && (
+            <div className="settings-panel">
+              <button
+                className="version-button"
+                type="button"
+                onClick={checkLatestVersion}
+                disabled={updateChecking}
+                title="检查更新"
+              >
+                <span>版本号</span>
+                <strong>{appVersion ? `v${appVersion}` : "未知"}</strong>
+              </button>
+              <div className="theme-settings">
+                <div className="settings-group-title">主题</div>
+                <div className="theme-actions">
+                  <button className="theme-action-button" type="button" onClick={chooseThemeBackground}>
+                    选择背景
+                  </button>
+                  <button
+                    className="theme-action-button"
+                    type="button"
+                    onClick={clearThemeBackground}
+                    disabled={!themeSettings.backgroundImageUrl}
+                  >
+                    移除
+                  </button>
+                </div>
+                <label className="theme-slider">
+                  <span>背景强度</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={themeSettings.backgroundStrength}
+                    onChange={(event) => updateTheme({ backgroundStrength: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="theme-slider">
+                  <span>背景模糊</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="24"
+                    step="1"
+                    value={themeSettings.backgroundBlur}
+                    onChange={(event) => updateTheme({ backgroundBlur: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="theme-slider">
+                  <span>卡片透明度</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.96"
+                    step="0.02"
+                    value={themeSettings.panelOpacity}
+                    onChange={(event) => updateTheme({ panelOpacity: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="theme-slider">
+                  <span>卡片磨砂</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="24"
+                    step="1"
+                    value={themeSettings.panelBlur}
+                    onChange={(event) => updateTheme({ panelBlur: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="new-scene">
           <input

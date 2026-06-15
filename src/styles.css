@@ -59,6 +59,8 @@ button:disabled {
 }
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: minmax(248px, 324px) minmax(0, 1fr) minmax(268px, 398px);
   gap: 16px;
@@ -68,14 +70,39 @@ button:disabled {
   overflow: hidden;
 }
 
+.app-shell::before,
+.app-shell::after {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.app-shell::before {
+  background-image: var(--theme-background-image, none);
+  background-position: center;
+  background-size: cover;
+  filter: blur(var(--theme-background-blur, 8px));
+  opacity: var(--theme-background-strength, 0);
+  transform: scale(1.03);
+}
+
+.app-shell::after {
+  background: rgb(248, 250, 252);
+  opacity: var(--theme-scrim-opacity, 0);
+}
+
 .sidebar,
 .content-panel,
 .inspector {
+  position: relative;
+  z-index: 1;
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, var(--panel-opacity, 0.8));
   box-shadow: 0 18px 44px rgba(30, 41, 59, 0.1);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--panel-blur, 24px));
 }
 
 .sidebar {
@@ -246,6 +273,11 @@ button:disabled {
   background: rgba(10, 132, 255, 0.12);
 }
 
+.scene-symbol.settings {
+  color: #475569;
+  background: rgba(100, 116, 139, 0.12);
+}
+
 .ghost-dot {
   position: absolute;
   top: 4px;
@@ -261,6 +293,107 @@ button:disabled {
   opacity: 1;
 }
 
+.sidebar-settings {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 17px;
+  color: #243044;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.settings-row.active {
+  background: rgba(100, 116, 139, 0.1);
+}
+
+.settings-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.version-button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.version-button strong {
+  color: #0a63c7;
+  font-size: 13px;
+}
+
+.version-button:disabled {
+  cursor: wait;
+}
+
+.theme-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-group-title {
+  padding: 4px 2px 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.theme-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.theme-action-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 11px;
+  color: #0a63c7;
+  background: rgba(10, 132, 255, 0.12);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.theme-slider {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.theme-slider input {
+  width: 100%;
+  accent-color: #0a84ff;
+}
+
 .new-scene,
 .scene-edit {
   display: grid;
@@ -268,8 +401,7 @@ button:disabled {
 }
 
 .new-scene {
-  margin-top: auto;
-  padding-top: 18px;
+  margin-top: 12px;
 }
 
 .scene-edit {
@@ -1301,49 +1433,126 @@ button:disabled {
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.24);
 }
 
-.update-banner {
+.update-dialog-overlay {
   position: fixed;
-  top: 18px;
-  left: 50%;
+  inset: 0;
   z-index: 20;
-  display: inline-flex;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.update-dialog {
+  display: grid;
+  width: min(520px, calc(100vw - 48px));
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  color: #172033;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.update-dialog-header {
+  display: flex;
   align-items: center;
-  max-width: min(560px, calc(100vw - 40px));
-  min-height: 42px;
-  gap: 12px;
-  transform: translateX(-50%);
-  padding: 8px 10px 8px 16px;
-  border: 1px solid rgba(10, 132, 255, 0.22);
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.update-dialog-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.release-notes {
+  display: grid;
+  max-height: 220px;
+  gap: 10px;
+  overflow: auto;
+  padding: 14px;
   border-radius: 14px;
-  color: #075db4;
-  background: rgba(239, 247, 255, 0.96);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(18px);
-  font-size: 13px;
-  font-weight: 700;
+  color: #334155;
+  background: rgba(241, 245, 249, 0.86);
 }
 
-.update-banner.ready {
-  border-color: rgba(34, 197, 94, 0.24);
-  color: #15803d;
-  background: rgba(240, 253, 244, 0.96);
+.release-notes strong {
+  color: #172033;
 }
 
-.update-banner span {
-  min-width: 0;
+.release-notes p,
+.update-dialog-hint,
+.update-ready-message,
+.update-error-message {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.release-notes p {
+  white-space: pre-wrap;
+}
+
+.update-error-message {
+  color: #b91c1c;
+}
+
+.update-progress-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.update-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #334155;
+  font-weight: 750;
+}
+
+.update-progress-head strong {
+  color: #0a63c7;
+}
+
+.update-progress-track {
+  height: 12px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
 }
 
-.update-banner button {
-  min-height: 30px;
-  flex: 0 0 auto;
-  padding: 0 12px;
+.update-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0a84ff;
+  transition: width 0.18s ease;
+}
+
+.update-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.background-download-button {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 18;
+  min-height: 40px;
+  transform: translateX(-50%);
+  padding: 0 16px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 999px;
   color: white;
-  background: #15803d;
+  background: rgba(15, 23, 42, 0.86);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.24);
   font-weight: 800;
 }
 

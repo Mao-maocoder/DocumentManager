@@ -22,8 +22,19 @@ const api: FileManagerApi = {
   openFile: (fileId: string) => ipcRenderer.invoke("file-manager:open-file", fileId),
   showInFolder: (fileId: string) => ipcRenderer.invoke("file-manager:show-in-folder", fileId),
   getPreview: (fileId: string) => ipcRenderer.invoke("file-manager:get-preview", fileId),
-  onUpdateAvailable: (callback: (version: string) => void) =>
-    onIpcMessage<[string]>("update-available", callback),
+  getAppVersion: () => ipcRenderer.invoke("file-manager:get-app-version"),
+  checkForUpdates: () => ipcRenderer.invoke("file-manager:check-for-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("file-manager:download-update"),
+  getThemeSettings: () => ipcRenderer.invoke("file-manager:get-theme-settings"),
+  updateThemeSettings: (settings) => ipcRenderer.invoke("file-manager:update-theme-settings", settings),
+  chooseThemeBackground: () => ipcRenderer.invoke("file-manager:choose-theme-background"),
+  clearThemeBackground: () => ipcRenderer.invoke("file-manager:clear-theme-background"),
+  onUpdateAvailable: (callback) =>
+    onIpcMessage("update-available", callback),
+  onUpdateNotAvailable: (callback: (version: string) => void) =>
+    onIpcMessage<[string]>("update-not-available", callback),
+  onUpdateDownloadProgress: (callback) =>
+    onIpcMessage("update-download-progress", callback),
   onUpdateDownloaded: (callback: () => void) =>
     onIpcMessage<[]>("update-downloaded", callback),
   onUpdateError: (callback: (message: string) => void) =>
