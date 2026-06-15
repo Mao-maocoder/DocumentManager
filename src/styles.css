@@ -329,6 +329,7 @@ button:disabled {
 }
 
 .version-button {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -343,9 +344,37 @@ button:disabled {
   text-align: left;
 }
 
-.version-button strong {
+.version-button.has-update::after {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #ef4444;
+  content: "";
+}
+
+.version-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.version-value strong {
   color: #0a63c7;
   font-size: 13px;
+}
+
+.version-value em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .version-button:disabled {

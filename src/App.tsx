@@ -669,7 +669,7 @@ export function App() {
             ) : (
               <>
                 <div className="release-notes">
-                  <strong>{updateInfo?.releaseName ?? "变更内容"}</strong>
+                  <strong>更新内容</strong>
                   <p>{updateInfo?.releaseNotes}</p>
                 </div>
                 <p className="update-dialog-hint">是否现在下载并安装这个更新？</p>
@@ -801,14 +801,17 @@ export function App() {
           {settingsOpen && (
             <div className="settings-panel">
               <button
-                className="version-button"
+                className={updateInfo && updateDialogMode === "prompt" ? "version-button has-update" : "version-button"}
                 type="button"
                 onClick={checkLatestVersion}
                 disabled={updateChecking}
                 title="检查更新"
               >
                 <span>版本号</span>
-                <strong>{appVersion ? `v${appVersion}` : "未知"}</strong>
+                <span className="version-value">
+                  <strong>{appVersion ? `v${appVersion}` : "未知"}</strong>
+                  {updateInfo && updateDialogMode === "prompt" && <em>新版本</em>}
+                </span>
               </button>
               <div className="theme-settings">
                 <div className="settings-group-title">主题</div>
