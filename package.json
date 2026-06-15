@@ -1,6 +1,6 @@
 {
     "name": "file-assistant",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "private": true,
     "description": "A Windows desktop app for organizing frequently used file shortcuts by scene.",
     "main": "dist-electron/electron/main.js",
@@ -53,7 +53,7 @@
             "target": [
                 "nsis"
             ],
-            "artifactName": "${productName}-Setup-${version}.${ext}"
+            "artifactName": "file-assistant-setup-${version}.${ext}"
         },
         "nsis": {
             "oneClick": false,
