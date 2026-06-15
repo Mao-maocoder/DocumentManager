@@ -53,6 +53,43 @@ function getThemeFilePath(): string {
   return path.join(getAppDataDir(), "theme.json");
 }
 
+function isManagedThemeBackground(filePath: string | null): boolean {
+  if (!filePath) {
+    return false;
+  }
+
+  const resolvedDataDir = path.resolve(getAppDataDir());
+  const resolvedFilePath = path.resolve(filePath);
+  const basename = path.basename(resolvedFilePath).toLocaleLowerCase();
+  return (
+    path.dirname(resolvedFilePath) === resolvedDataDir &&
+    basename.startsWith("theme-background.") &&
+    [".png", ".jpg", ".jpeg", ".webp", ".bmp"].includes(path.extname(basename))
+  );
+}
+
+function cleanupThemeBackground(filePath: string | null, keepPath?: string): void {
+  if (!filePath) {
+    return;
+  }
+  if (!isManagedThemeBackground(filePath)) {
+    return;
+  }
+
+  const resolvedFilePath = path.resolve(filePath);
+  if (keepPath && resolvedFilePath === path.resolve(keepPath)) {
+    return;
+  }
+
+  try {
+    if (fs.existsSync(resolvedFilePath)) {
+      fs.unlinkSync(resolvedFilePath);
+    }
+  } catch {
+    // Background cleanup is best-effort and should never break theme switching.
+  }
+}
+
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
@@ -97,7 +134,10 @@ function loadThemeSettings(): ThemeSettings {
   }
 }
 
-function saveThemeSettings(settings: Partial<ThemeSettings> & { backgroundImagePath?: string | null }): ThemeSettings {
+function saveThemeSettings(
+  settings: Partial<ThemeSettings> & { backgroundImagePath?: string | null },
+  options: { cleanupOldBackground?: boolean } = {}
+): ThemeSettings {
   const existing = readRawThemeSettings();
   const next = {
     backgroundImagePath:
@@ -113,6 +153,9 @@ function saveThemeSettings(settings: Partial<ThemeSettings> & { backgroundImageP
     panelBlur: clampNumber(settings.panelBlur, 0, 24, existing.panelBlur)
   };
   fs.writeFileSync(getThemeFilePath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  if (options.cleanupOldBackground) {
+    cleanupThemeBackground(existing.backgroundImagePath, next.backgroundImagePath ?? undefined);
+  }
   return themeWithUrl(next);
 }
 
@@ -451,7 +494,9 @@ ipcMain.handle("file-manager:update-theme-settings", (_event, settings: unknown)
   }
   return saveThemeSettings(settings as Partial<ThemeSettings>);
 });
-ipcMain.handle("file-manager:clear-theme-background", () => saveThemeSettings({ backgroundImagePath: null }));
+ipcMain.handle("file-manager:clear-theme-background", () =>
+  saveThemeSettings({ backgroundImagePath: null }, { cleanupOldBackground: true })
+);
 ipcMain.handle("file-manager:choose-theme-background", async (): Promise<ThemeResult> => {
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, {
@@ -484,9 +529,10 @@ ipcMain.handle("file-manager:choose-theme-background", async (): Promise<ThemeRe
         backgroundBlur: 4,
         panelOpacity: 0.52,
         panelBlur: 8
-      })
+      }, { cleanupOldBackground: true })
     };
   } catch {
+    cleanupThemeBackground(targetPath);
     return { ok: false, message: "背景图片复制失败。", theme: loadThemeSettings() };
   }
 });
