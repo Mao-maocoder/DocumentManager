@@ -543,8 +543,8 @@ ipcMain.handle("file-manager:add-files", async (_event, sceneId: unknown) => {
   const data = loadData();
   const targetSceneId = sceneExists(data, sceneId) ? sceneId : UNCATEGORIZED_SCENE_ID;
   const openDialogOptions = {
-    title: "选择要加入管理的文件",
-    properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">
+    title: "选择要加入管理的文件或文件夹",
+    properties: ["openFile", "openDirectory", "multiSelections"] as Array<"openFile" | "openDirectory" | "multiSelections">
   };
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, openDialogOptions)

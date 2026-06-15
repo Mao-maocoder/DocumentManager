@@ -1,6 +1,6 @@
 {
     "name": "file-assistant",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "private": true,
     "description": "A Windows desktop app for organizing frequently used file shortcuts by scene.",
     "main": "dist-electron/electron/main.js",
